@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:path_provider_linux/path_provider_linux.dart' as path;
 import 'dart:math';
 
@@ -133,9 +134,12 @@ class _MazeGeneratorState extends State<MazeGenerator>
   late List<List<Node>> maze;
   late Offset origin;
   bool isRunning = false;
-  Timer? timer;
+  Timer? animationTimer;
+  Timer? keyPressTimer;
   int iterationCount = 0;
-  double simulationSpeed = 100;
+  double simulationSpeed = 10;
+  final int minSpeed = 10;
+  final int maxSpeed = 500;
 
   final List<Offset> possibleDirections = [
     const Offset(0, 1),
@@ -228,19 +232,19 @@ class _MazeGeneratorState extends State<MazeGenerator>
     setState(() {
       isRunning = !isRunning;
       if (isRunning) {
-        timer = Timer.periodic(
-          Duration(milliseconds: simulationSpeed.toInt()),
+        animationTimer = Timer.periodic(
+          Duration(milliseconds: (1000 / simulationSpeed).round()),
           (_) => iterate(),
         );
       } else {
-        timer?.cancel();
+        animationTimer?.cancel();
       }
     });
   }
 
   @override
   void dispose() {
-    timer?.cancel();
+    animationTimer?.cancel();
     super.dispose();
   }
 
@@ -248,6 +252,7 @@ class _MazeGeneratorState extends State<MazeGenerator>
     return {
       'width': width,
       'height': height,
+      'simulationSpeed': simulationSpeed,
       'origin': {'x': origin.dx, 'y': origin.dy},
       'iterationCount': iterationCount,
       'maze': maze
@@ -267,6 +272,9 @@ class _MazeGeneratorState extends State<MazeGenerator>
       width = config['width'] is int
           ? config['width']
           : int.parse(config['width'].toString());
+      simulationSpeed = config['simulationSpeed'] is double
+          ? config['simulationSpeed']
+          : double.parse(config['simulationSpeed'].toString());
 
       height = config['height'] is int
           ? config['height']
@@ -450,12 +458,12 @@ class _MazeGeneratorState extends State<MazeGenerator>
     );
   }
 
-  Widget _buildActionButton({
-    required String text,
-    required VoidCallback onPressed,
-    bool isPrimary = false,
-  }) {
-    return ElevatedButton(
+  Widget _buildActionButton(
+      {required String text,
+      required VoidCallback onPressed,
+      bool isPrimary = false,
+      String? tooltip}) {
+    final button = ElevatedButton(
       onPressed: onPressed,
       style: ElevatedButton.styleFrom(
         backgroundColor: isPrimary
@@ -477,170 +485,293 @@ class _MazeGeneratorState extends State<MazeGenerator>
         ),
       ),
     );
+
+    return tooltip != null
+        ? Tooltip(
+            message: tooltip,
+            decoration: BoxDecoration(
+              color: Colors.grey[850],
+              borderRadius: BorderRadius.circular(4),
+            ),
+            textStyle: TextStyle(
+              color: Colors.white.withValues(alpha: 0.9),
+              fontSize: 12,
+            ),
+            child: button,
+          )
+        : button;
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFF121212),
-      body: LayoutBuilder(
-        builder: (context, constraints) {
-          final cellSize = calculateCellSize(constraints);
-          final dotRadius = cellSize * dotRadiusRatio;
+      body: Focus(
+        autofocus: true,
+        onKeyEvent: (FocusNode node, KeyEvent event) {
+          if (event is KeyDownEvent) {
+            if (event.logicalKey == LogicalKeyboardKey.space) {
+              toggleAnimation();
+              return KeyEventResult.handled;
+            } else if (event.logicalKey == LogicalKeyboardKey.keyI &&
+                !isRunning) {
+              iterate();
+              keyPressTimer?.cancel();
+              keyPressTimer = Timer(
+                const Duration(milliseconds: 500),
+                () {
+                  if (!isRunning) {
+                    iterate();
+                    keyPressTimer = Timer.periodic(
+                        const Duration(milliseconds: 50), (_) => iterate());
+                  }
+                },
+              );
+              return KeyEventResult.handled;
+            } else if (event.logicalKey == LogicalKeyboardKey.keyR) {
+              setState(() {
+                generatePerfectMaze();
+                iterationCount = 0;
+              });
 
-          return SafeArea(
-            child: Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 16.0),
-                  child: Text(
-                    'Maze Generator',
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.9),
-                      fontSize: 24,
-                      fontWeight: FontWeight.w300,
-                      letterSpacing: 1.2,
+              return KeyEventResult.handled;
+            } else if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
+              void increaseSpeed() {
+                setState(() {
+                  if (simulationSpeed + 10 <= maxSpeed) {
+                    simulationSpeed += 10;
+                    // Update the running animation if needed
+                    if (isRunning) {
+                      animationTimer?.cancel();
+                      animationTimer = Timer.periodic(
+                        Duration(
+                            milliseconds: (1000 / simulationSpeed).round()),
+                        (_) => iterate(),
+                      );
+                    }
+                  }
+                });
+              }
+
+              increaseSpeed();
+
+              keyPressTimer?.cancel();
+              keyPressTimer = Timer(
+                const Duration(milliseconds: 500),
+                () {
+                  keyPressTimer = Timer.periodic(
+                    const Duration(milliseconds: 50),
+                    (_) => increaseSpeed(),
+                  );
+                },
+              );
+
+              return KeyEventResult.handled;
+            } else if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
+              void decreaseSpeed() {
+                setState(() {
+                  if (simulationSpeed - 10 >= minSpeed) {
+                    simulationSpeed -= 10;
+                    if (isRunning) {
+                      animationTimer?.cancel();
+                      animationTimer = Timer.periodic(
+                        Duration(
+                            milliseconds: (1000 / simulationSpeed).round()),
+                        (_) => iterate(),
+                      );
+                    }
+                  }
+                });
+              }
+
+              // Initial speed decrease
+              decreaseSpeed();
+
+              // Setup timer for held key
+              keyPressTimer?.cancel();
+              keyPressTimer = Timer(
+                const Duration(milliseconds: 500),
+                () {
+                  keyPressTimer = Timer.periodic(
+                    const Duration(milliseconds: 50),
+                    (_) => decreaseSpeed(),
+                  );
+                },
+              );
+
+              return KeyEventResult.handled;
+            }
+          } else if (event is KeyUpEvent) {
+            if (event.logicalKey == LogicalKeyboardKey.keyI) {
+              keyPressTimer?.cancel();
+              keyPressTimer = null;
+              return KeyEventResult.handled;
+            }
+          }
+          return KeyEventResult.ignored;
+        },
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final cellSize = calculateCellSize(constraints);
+            final dotRadius = cellSize * dotRadiusRatio;
+
+            return SafeArea(
+              child: Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 16.0),
+                    child: Text(
+                      'Maze Generator',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.9),
+                        fontSize: 24,
+                        fontWeight: FontWeight.w300,
+                        letterSpacing: 1.2,
+                      ),
                     ),
                   ),
-                ),
-                Expanded(
-                  child: Center(
-                    child: Container(
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(12),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.cyan.withValues(alpha: 0.1),
-                            blurRadius: 15,
-                            spreadRadius: 5,
-                          )
-                        ],
-                      ),
-                      child: GestureDetector(
-                        onTapDown: (TapDownDetails details) {
-                          final localPos = details.localPosition;
-                          final x = (localPos.dx / cellSize).floor();
-                          final y = (localPos.dy / cellSize).floor();
+                  Expanded(
+                    child: Center(
+                      child: Container(
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(12),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.cyan.withValues(alpha: 0.1),
+                              blurRadius: 15,
+                              spreadRadius: 5,
+                            )
+                          ],
+                        ),
+                        child: GestureDetector(
+                          onTapDown: (TapDownDetails details) {
+                            final localPos = details.localPosition;
+                            final x = (localPos.dx / cellSize).floor();
+                            final y = (localPos.dy / cellSize).floor();
 
-                          if (x >= 0 && x < width && y >= 0 && y < height) {
-                            setState(() {
-                              origin = Offset(x.toDouble(), y.toDouble());
+                            if (x >= 0 && x < width && y >= 0 && y < height) {
+                              setState(() {
+                                origin = Offset(x.toDouble(), y.toDouble());
 
-                              final currentNode = maze[y][x];
-                              if (currentNode.direction != null) {
-                                int newDirX = 0, newDirY = 0;
+                                final currentNode = maze[y][x];
+                                if (currentNode.direction != null) {
+                                  int newDirX = 0, newDirY = 0;
 
-                                for (final dir in possibleDirections) {
-                                  final nextX = (x + dir.dx).toInt();
-                                  final nextY = (y + dir.dy).toInt();
+                                  for (final dir in possibleDirections) {
+                                    final nextX = (x + dir.dx).toInt();
+                                    final nextY = (y + dir.dy).toInt();
 
-                                  if (nextX >= 0 &&
-                                      nextX < width &&
-                                      nextY >= 0 &&
-                                      nextY < height &&
-                                      maze[nextY][nextX].direction != null) {
-                                    newDirX = dir.dx.toInt();
-                                    newDirY = dir.dy.toInt();
-                                    break;
+                                    if (nextX >= 0 &&
+                                        nextX < width &&
+                                        nextY >= 0 &&
+                                        nextY < height &&
+                                        maze[nextY][nextX].direction != null) {
+                                      newDirX = dir.dx.toInt();
+                                      newDirY = dir.dy.toInt();
+                                      break;
+                                    }
                                   }
+
+                                  currentNode.direction = Offset(
+                                      newDirX.toDouble(), newDirY.toDouble());
                                 }
 
-                                currentNode.direction = Offset(
-                                    newDirX.toDouble(), newDirY.toDouble());
-                              }
-
-                              iterationCount++;
-                            });
-                          }
-                        },
-                        child: CustomPaint(
-                          size: Size(width * cellSize, height * cellSize),
-                          painter: MazePainter(
-                            maze: maze,
-                            origin: origin,
-                            cellSize: cellSize,
-                            dotRadius: dotRadius,
+                                iterationCount++;
+                              });
+                            }
+                          },
+                          child: CustomPaint(
+                            size: Size(width * cellSize, height * cellSize),
+                            painter: MazePainter(
+                              maze: maze,
+                              origin: origin,
+                              cellSize: cellSize,
+                              dotRadius: dotRadius,
+                            ),
                           ),
                         ),
                       ),
                     ),
                   ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8.0),
-                  child: Text(
-                    'Iterations: $iterationCount',
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.7),
-                      fontSize: 16,
-                      fontWeight: FontWeight.w300,
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8.0),
+                    child: Text(
+                      'Iterations: $iterationCount',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.7),
+                        fontSize: 16,
+                        fontWeight: FontWeight.w300,
+                      ),
                     ),
                   ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                  child: Column(
-                    children: [
-                      _buildSliderRow('Width', width, 5, 40,
-                          (value) => updateMazeSize(value.toInt(), height)),
-                      _buildSliderRow('Height', height, 5, 40,
-                          (value) => updateMazeSize(width, value.toInt())),
-                      _buildSliderRow('Speed', simulationSpeed.toInt(), 1, 500,
-                          (value) {
-                        setState(() {
-                          simulationSpeed = value;
-                          if (isRunning) {
-                            timer?.cancel();
-                            timer = Timer.periodic(
-                              Duration(milliseconds: simulationSpeed.toInt()),
-                              (_) => iterate(),
-                            );
-                          }
-                        });
-                      }, suffix: 'ms'),
-                    ],
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Wrap(
-                    alignment: WrapAlignment.center,
-                    spacing: 16,
-                    runSpacing: 16,
-                    children: [
-                      _buildActionButton(
-                        text: isRunning ? 'Stop' : 'Start',
-                        onPressed: toggleAnimation,
-                        isPrimary: true,
-                      ),
-                      _buildActionButton(
-                        text: 'Step',
-                        onPressed: iterate,
-                      ),
-                      _buildActionButton(
-                        text: 'Reset',
-                        onPressed: () {
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                    child: Column(
+                      children: [
+                        _buildSliderRow('Width', width, 5, 40,
+                            (value) => updateMazeSize(value.toInt(), height)),
+                        _buildSliderRow('Height', height, 5, 40,
+                            (value) => updateMazeSize(width, value.toInt())),
+                        _buildSliderRow('Speed', simulationSpeed.round(),
+                            minSpeed, maxSpeed, (value) {
                           setState(() {
-                            generatePerfectMaze();
-                            iterationCount = 0;
+                            simulationSpeed = value;
+                            if (isRunning) {
+                              animationTimer?.cancel();
+                              animationTimer = Timer.periodic(
+                                Duration(
+                                    milliseconds:
+                                        (1000 / simulationSpeed.toInt())
+                                            .round()),
+                                (_) => iterate(),
+                              );
+                            }
                           });
-                        },
-                      ),
-                      _buildActionButton(
-                        text: 'Export',
-                        onPressed: exportMazeToFile,
-                      ),
-                      _buildActionButton(
-                        text: 'Import',
-                        onPressed: importMazeFromFile,
-                      ),
-                    ],
+                        }, suffix: 'Hz'),
+                      ],
+                    ),
                   ),
-                ),
-              ],
-            ),
-          );
-        },
+                  Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Wrap(
+                      alignment: WrapAlignment.center,
+                      spacing: 16,
+                      runSpacing: 16,
+                      children: [
+                        _buildActionButton(
+                            text: isRunning ? 'Stop' : 'Start',
+                            onPressed: toggleAnimation,
+                            isPrimary: true,
+                            tooltip: 'Press Space'),
+                        _buildActionButton(
+                            text: 'Step',
+                            onPressed: iterate,
+                            tooltip: 'Hold I key'),
+                        _buildActionButton(
+                            text: 'Reset',
+                            onPressed: () {
+                              setState(() {
+                                generatePerfectMaze();
+                                iterationCount = 0;
+                              });
+                            },
+                            tooltip: 'Press R'),
+                        _buildActionButton(
+                          text: 'Export',
+                          onPressed: exportMazeToFile,
+                        ),
+                        _buildActionButton(
+                          text: 'Import',
+                          onPressed: importMazeFromFile,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
       ),
     );
   }
