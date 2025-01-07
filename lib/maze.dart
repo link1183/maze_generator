@@ -3,7 +3,8 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:path_provider_linux/path_provider_linux.dart' as path;
+import 'package:flutter_maze/maze_paths.dart';
+import 'package:file_picker/file_picker.dart';
 import 'dart:math';
 
 class MazePainter extends CustomPainter {
@@ -323,21 +324,18 @@ class _MazeGeneratorState extends State<MazeGenerator>
   Future<void> exportMazeToFile() async {
     try {
       final mazeConfig = exportMazeConfiguration();
-
-      final directory =
-          await path.PathProviderLinux().getApplicationDocumentsPath();
-
+      final directory = await MazePaths.getMazeDirectory();
       final timestamp = DateTime.now().toIso8601String().replaceAll(':', '-');
-      final file = File('$directory/maze_config_$timestamp.json');
+      final filename = 'maze_config_$timestamp.json';
+      final file = File('$directory/$filename');
 
       final jsonString = JsonEncoder.withIndent('  ').convert(mazeConfig);
-
       await file.writeAsString(jsonString);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Maze exported to ${file.path}'),
+            content: Text('Maze exported to $filename'),
             backgroundColor: Colors.cyan.shade400,
           ),
         );
@@ -356,34 +354,19 @@ class _MazeGeneratorState extends State<MazeGenerator>
 
   Future<void> importMazeFromFile() async {
     try {
-      final directory =
-          await path.PathProviderLinux().getApplicationDocumentsPath() ??
-              '/home/agunthe1/projects/github/flutter_maze/';
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['json'],
+        dialogTitle: 'Select a maze configuration file',
+      );
 
-      final Directory documentsDir = Directory(directory);
-
-      final files = documentsDir
-          .listSync()
-          .where((file) => file.path.endsWith('.json'))
-          .toList()
-        ..sort((a, b) => (b as File)
-            .statSync()
-            .modified
-            .compareTo((a as File).statSync().modified));
-
-      if (files.isEmpty) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('No maze configuration files found'),
-              backgroundColor: Colors.red.shade400,
-            ),
-          );
-        }
+      if (result == null || result.files.isEmpty) {
         return;
       }
 
-      final file = files.first as File;
+      final file = File(result.files.first.path!);
+      final filename = file.path.split('/').last;
+
       final jsonString = await file.readAsString();
       final mazeConfig = json.decode(jsonString);
 
@@ -392,7 +375,7 @@ class _MazeGeneratorState extends State<MazeGenerator>
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Maze imported from ${file.path}'),
+            content: Text('Maze imported from $filename'),
             backgroundColor: Colors.cyan.shade400,
           ),
         );
