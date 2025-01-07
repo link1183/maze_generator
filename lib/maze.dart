@@ -273,13 +273,15 @@ class _MazeGeneratorState extends State<MazeGenerator>
       width = config['width'] is int
           ? config['width']
           : int.parse(config['width'].toString());
-      simulationSpeed = config['simulationSpeed'] is double
-          ? config['simulationSpeed']
-          : double.parse(config['simulationSpeed'].toString());
-
       height = config['height'] is int
           ? config['height']
           : int.parse(config['height'].toString());
+      simulationSpeed = config['simulationSpeed'] is double
+          ? config['simulationSpeed']
+          : double.parse(config['simulationSpeed'].toString());
+      iterationCount = config['iterationCount'] is int
+          ? config['iterationCount']
+          : int.parse(config['iterationCount'].toString());
 
       maze = List.generate(
         height,
@@ -314,10 +316,6 @@ class _MazeGeneratorState extends State<MazeGenerator>
                 : double.parse(config['origin']['y'].toString()))
             .toDouble(),
       );
-
-      iterationCount = config['iterationCount'] is int
-          ? config['iterationCount']
-          : int.parse(config['iterationCount'].toString());
     });
   }
 
@@ -355,10 +353,10 @@ class _MazeGeneratorState extends State<MazeGenerator>
   Future<void> importMazeFromFile() async {
     try {
       final result = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: ['json'],
-        dialogTitle: 'Select a maze configuration file',
-      );
+          type: FileType.custom,
+          allowedExtensions: ['json'],
+          dialogTitle: 'Select a maze configuration file',
+          allowMultiple: false);
 
       if (result == null || result.files.isEmpty) {
         return;
@@ -523,7 +521,6 @@ class _MazeGeneratorState extends State<MazeGenerator>
                 setState(() {
                   if (simulationSpeed + 10 <= maxSpeed) {
                     simulationSpeed += 10;
-                    // Update the running animation if needed
                     if (isRunning) {
                       animationTimer?.cancel();
                       animationTimer = Timer.periodic(
