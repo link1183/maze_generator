@@ -564,10 +564,8 @@ class _MazeGeneratorState extends State<MazeGenerator>
                 });
               }
 
-              // Initial speed decrease
               decreaseSpeed();
 
-              // Setup timer for held key
               keyPressTimer?.cancel();
               keyPressTimer = Timer(
                 const Duration(milliseconds: 500),
