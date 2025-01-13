@@ -1,3 +1,18 @@
-The name says it all - it's a maze generation app
+# Flutter Maze Generator
 
-The algorithm used is known as origin shift, it's a pretty recent one described in [this video](https://www.youtube.com/watch?v=zbXKcDVV4G0) and I thought I'd implement it cuz why not
+Implementation of Origin Shift maze generation algorithm ([video explanation](https://www.youtube.com/watch?v=zbXKcDVV4G0)).
+
+## Run
+
+```bash
+flutter pub get
+flutter run
+```
+
+## Controls
+
+- **Space**: Start/Stop generation
+- **I**: Step through generation (hold for continuous steps)
+- **R**: Reset maze
+- **↑/↓**: Adjust speed
+- Click anywhere to move the origin point
