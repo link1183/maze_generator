@@ -9,6 +9,18 @@ import '../services/file_service.dart';
 import '../widgets/maze_controls.dart';
 import '../widgets/maze_painter.dart';
 
+class KeyShortcut {
+  final String description;
+  final VoidCallback onKeyDown;
+  final VoidCallback? onKeyUp;
+
+  const KeyShortcut({
+    required this.description,
+    required this.onKeyDown,
+    this.onKeyUp,
+  });
+}
+
 class MazeGeneratorScreen extends StatefulWidget {
   const MazeGeneratorScreen({super.key});
 
@@ -29,10 +41,60 @@ class _MazeGeneratorScreenState extends State<MazeGeneratorScreen>
   Timer? _animationTimer;
   Timer? _keyPressTimer;
 
+  final Map<LogicalKeyboardKey, KeyShortcut> _shortcuts =
+      <LogicalKeyboardKey, KeyShortcut>{};
+
+  void _initializeShortcuts() {
+    _shortcuts.addAll({
+      LogicalKeyboardKey.space: KeyShortcut(
+        description: 'Start/Stop generation',
+        onKeyDown: _toggleAnimation,
+      ),
+      LogicalKeyboardKey.keyR: KeyShortcut(
+        description: 'Reset maze',
+        onKeyDown: _reset,
+      ),
+      LogicalKeyboardKey.keyI: KeyShortcut(
+          description: 'Step through generation',
+          onKeyDown: () {
+            if (_isRunning) return;
+
+            _iterate();
+            _keyPressTimer?.cancel();
+            _keyPressTimer = Timer(const Duration(milliseconds: 500), () {
+              if (_isRunning) return;
+
+              _iterate();
+              _keyPressTimer = Timer.periodic(
+                  const Duration(milliseconds: 500), (Timer _) => _iterate());
+            });
+          },
+          onKeyUp: () {
+            _keyPressTimer?.cancel();
+            _keyPressTimer = null;
+          }),
+      LogicalKeyboardKey.arrowUp: KeyShortcut(
+          description: 'Increase speed',
+          onKeyDown: () => _handleSpeedChange(true),
+          onKeyUp: () {
+            _keyPressTimer?.cancel();
+            _keyPressTimer = null;
+          }),
+      LogicalKeyboardKey.arrowDown: KeyShortcut(
+          description: 'Decrease speed',
+          onKeyDown: () => _handleSpeedChange(false),
+          onKeyUp: () {
+            _keyPressTimer?.cancel();
+            _keyPressTimer = null;
+          })
+    });
+  }
+
   @override
   void initState() {
     super.initState();
     _initializeMaze();
+    _initializeShortcuts();
   }
 
   @override
@@ -250,45 +312,17 @@ class _MazeGeneratorScreenState extends State<MazeGeneratorScreen>
   }
 
   KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
+    final KeyShortcut? shortcut = _shortcuts[event.logicalKey];
+    if (shortcut == null) return KeyEventResult.ignored;
+
     if (event is KeyDownEvent) {
-      if (event.logicalKey == LogicalKeyboardKey.space) {
-        _toggleAnimation();
-        return KeyEventResult.handled;
-      } else if (event.logicalKey == LogicalKeyboardKey.keyI && !_isRunning) {
-        _iterate();
-        _keyPressTimer?.cancel();
-        _keyPressTimer = Timer(
-          const Duration(milliseconds: 500),
-          () {
-            if (!_isRunning) {
-              _iterate();
-              _keyPressTimer = Timer.periodic(
-                const Duration(milliseconds: 50),
-                (Timer _) => _iterate(),
-              );
-            }
-          },
-        );
-        return KeyEventResult.handled;
-      } else if (event.logicalKey == LogicalKeyboardKey.keyR) {
-        _reset();
-        return KeyEventResult.handled;
-      } else if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
-        _handleSpeedChange(true);
-        return KeyEventResult.handled;
-      } else if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
-        _handleSpeedChange(false);
-        return KeyEventResult.handled;
-      }
-    } else if (event is KeyUpEvent) {
-      if (event.logicalKey == LogicalKeyboardKey.keyI ||
-          event.logicalKey == LogicalKeyboardKey.arrowUp ||
-          event.logicalKey == LogicalKeyboardKey.arrowDown) {
-        _keyPressTimer?.cancel();
-        _keyPressTimer = null;
-        return KeyEventResult.handled;
-      }
+      shortcut.onKeyDown();
+      return KeyEventResult.handled;
+    } else if (event is KeyUpEvent && shortcut.onKeyUp != null) {
+      shortcut.onKeyUp!();
+      return KeyEventResult.handled;
     }
+
     return KeyEventResult.ignored;
   }
 
